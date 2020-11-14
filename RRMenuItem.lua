@@ -6,6 +6,7 @@ local LrFunctionContext = import "LrFunctionContext"
 local LrPathUtils = import "LrPathUtils"
 local LrFileUtils = import "LrFileUtils"
 local LrDialogs = import "LrDialogs"
+local LrProgressScope = import "LrProgressScope"
 
 require 'RRLogger'
 
@@ -19,6 +20,9 @@ function RRMenuItem.run()
                 "critical"
             )
         end )
+
+        local progress = LrProgressScope({title = "Removing RAW Versions", functionContext = context})
+        progress:setIndeterminate()
 
         local catalog = LrApplication.activeCatalog()
         local selection = catalog:getMultipleSelectedOrAllPhotos()
@@ -36,18 +40,40 @@ function RRMenuItem.run()
             )
 
             if confirm == "ok" then
-                local errors = {}
                 local status = true
+                local forceDelete = false
                 catalog:withWriteAccessDo("Remove Raw", function(ctx)
-                    for _, deletion in pairs(filesToDelete) do
+                    for i, deletion in ipairs(filesToDelete) do
                         RRLogger.logTable("deletion", deletion)
                         local path = deletion["path"]
                         RRLogger.info("Removing " .. path)
-                        local result = LrFileUtils.moveToTrash(path)
+                        local result, err = RRMenuItem.removeFile(path, forceDelete)
                         if not result then
+                            RRLogger.warn("Failure to delete, Err: " .. err)
+                        end
+
+                        if not result and not forceDelete then
                             status = false
-                            errors[#errors + 1] = result[1]
-                        else
+                            local forceConfirm = LrDialogs.confirm(
+                                "Delete Permanently?",
+                                "Unable to move " .. LrPathUtils.leafName(path) .. " to recycle bin. Error: " .. err,
+                                "Delete All Permanently",
+                                "Skip",
+                                "Cancel"
+                            )
+                            if forceConfirm == "other" then
+                                progress:cancel()
+                                return false
+                            elseif forceConfirm == "ok" then
+                                result, err = RRMenuItem.removeFile(path, true)
+                                forceDelete = true
+                                status = result
+                            elseif forceConfirm == "cancel" then
+                                -- Nothing?
+                            end
+                        end
+
+                        if result then
                             for _, version in pairs(deletion["versions"]) do
                                 if version ~= path then
                                     local newPhoto = catalog:addPhoto(version, deletion["photo"], "above")
@@ -55,10 +81,13 @@ function RRMenuItem.run()
                                 end
                             end
                         end
+
+                        progress:setPortionComplete(i, #filesToDelete)
                     end
                 end )
 
                 if status then
+                    progress:done()
                     LrDialogs.message(
                         "Deletion Complete",
                         "Removed " .. #filesToDelete .. " RAW files. Synchronize folder to remove the deleted photos from Lightroom Catalog.",
@@ -67,13 +96,22 @@ function RRMenuItem.run()
                 else
                     LrDialogs.message(
                         "Deletion Failed",
-                        "Error faced: " .. errors[0],
+                        "Errors encountered during deletion",
                         "critical"
                     )
                 end
             end
         end
     end )
+end
+
+function RRMenuItem.removeFile(path, force)
+    local result, err = LrFileUtils.moveToTrash(path)
+    if not result and force then
+        return LrFileUtils.delete(path)
+    else
+        return result, err
+    end
 end
 
 function RRMenuItem.copyProperties(from, to)
