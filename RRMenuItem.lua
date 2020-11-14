@@ -12,6 +12,14 @@ require 'RRLogger'
 function RRMenuItem.run()
     LrFunctionContext.postAsyncTaskWithContext( "Remving Raw version", function(context)
         RRLogger.trace("Starting run")
+        context:addFailureHandler( function(status, message)
+            LrDialogs.message(
+                "Deletion Failed",
+                "Error: " .. message,
+                "critical"
+            )
+        end )
+
         local catalog = LrApplication.activeCatalog()
         local selection = catalog:getMultipleSelectedOrAllPhotos()
         local filesToDelete = RRMenuItem.findFiles(selection)
@@ -24,29 +32,36 @@ function RRMenuItem.run()
         else
             local confirm = LrDialogs.confirm(
                 "Remove RAW FIles?",
-                "About to remove " .. #filesToDelete .. " RAW files. Proceed?"
+                "About to remove " .. #filesToDelete .. " RAW file(s). Proceed?"
             )
 
             if confirm == "ok" then
                 local errors = {}
                 local status = true
-                for _, deletion in pairs(filesToDelete) do
-                    local path = deletion["path"]
-                    RRLogger.info("Removing " .. path)
-                    local result = LrFileUtils.moveToTrash(path)
-                    if not result then
-                        status = false
-                        errors[#errors + 1] = result[1]
-                    else
-                        -- TODO Set object to remaining version path
-                        -- deletion["photo"]:setRawMetadata("path", path .. ".jpg")
+                catalog:withWriteAccessDo("Remove Raw", function(ctx)
+                    for _, deletion in pairs(filesToDelete) do
+                        RRLogger.logTable("deletion", deletion)
+                        local path = deletion["path"]
+                        RRLogger.info("Removing " .. path)
+                        local result = LrFileUtils.moveToTrash(path)
+                        if not result then
+                            status = false
+                            errors[#errors + 1] = result[1]
+                        else
+                            for _, version in pairs(deletion["versions"]) do
+                                if version ~= path then
+                                    local newPhoto = catalog:addPhoto(version, deletion["photo"], "above")
+                                    -- Copy over properties from the old photo to match
+                                end
+                            end
+                        end
                     end
-                end
+                end )
 
                 if status then
                     LrDialogs.message(
                         "Deletion Complete",
-                        "Removed " .. #filesToDelete .. " RAW files.",
+                        "Removed " .. #filesToDelete .. " RAW files. Synchronize folder to remove the deleted photos from Lightroom Catalog.",
                         "info"
                     )
                 else
@@ -73,17 +88,18 @@ function RRMenuItem.findFiles(selection)
             local fileName = LrPathUtils.leafName(photoPath)
             local name = LrPathUtils.removeExtension(fileName)
 
-            local versions = 0
+            local versions = {}
             for file in LrFileUtils.files(dir) do
-                if LrPathUtils.removeExtension(LrPathUtils.leafName(photoPath)) == name then
-                    versions = versions + 1
+                if LrPathUtils.removeExtension(LrPathUtils.leafName(file)) == name then
+                    versions[#versions + 1] = file
                 end
             end
 
-            if versions > 1 then
+            if #versions > 1 then
                 filesToDelete[#filesToDelete + 1] = {
                     photo = photo,
-                    path = photoPath
+                    path = photoPath,
+                    versions = versions
                 }
             end
         end
