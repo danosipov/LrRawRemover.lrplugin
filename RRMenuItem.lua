@@ -21,7 +21,7 @@ function RRMenuItem.run()
             )
         end )
 
-        local progress = LrProgressScope({title = "Removing RAW Versions", functionContext = context})
+        local progress = LrProgressScope({title = "Listing files and versions", functionContext = context})
         progress:setIndeterminate()
 
         local catalog = LrApplication.activeCatalog()
@@ -40,6 +40,7 @@ function RRMenuItem.run()
             )
 
             if confirm == "ok" then
+                progress:setCaption("Removing Files")
                 local status = true
                 local forceDelete = false
                 catalog:withWriteAccessDo("Remove Raw", function(ctx)
@@ -75,7 +76,8 @@ function RRMenuItem.run()
 
                         if result then
                             for _, version in pairs(deletion["versions"]) do
-                                if version ~= path then
+                                local versionExtension = LrPathUtils.extension(version):lower()
+                                if version ~= path and (versionExtension == "jpg" or versionExtension == "jpeg") then
                                     local newPhoto = catalog:addPhoto(version, deletion["photo"], "above")
                                     RRMenuItem.copyProperties(deletion["photo"], newPhoto)
                                 end
