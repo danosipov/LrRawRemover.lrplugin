@@ -51,7 +51,7 @@ function RRMenuItem.run()
                             for _, version in pairs(deletion["versions"]) do
                                 if version ~= path then
                                     local newPhoto = catalog:addPhoto(version, deletion["photo"], "above")
-                                    -- Copy over properties from the old photo to match
+                                    RRMenuItem.copyProperties(deletion["photo"], newPhoto)
                                 end
                             end
                         end
@@ -74,6 +74,14 @@ function RRMenuItem.run()
             end
         end
     end )
+end
+
+function RRMenuItem.copyProperties(from, to)
+    to:setRawMetadata("rating", from:getRawMetadata("rating"))
+    to:setRawMetadata("caption", from:getFormattedMetadata("caption"))
+    to:setRawMetadata("title", from:getFormattedMetadata("title"))
+    to:setRawMetadata("label", from:getFormattedMetadata("label"))
+    to:setRawMetadata("pickStatus", from:getRawMetadata("pickStatus"))
 end
 
 function RRMenuItem.findFiles(selection)
