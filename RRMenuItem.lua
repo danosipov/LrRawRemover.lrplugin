@@ -126,6 +126,7 @@ end
 
 function RRMenuItem.findFiles(selection)
     local filesToDelete = {}
+    local dirCache = {}
     for _, photo in pairs(selection) do
         local photoPath = photo:getRawMetadata("path")
         local fileFormat = photo:getRawMetadata("fileFormat")
@@ -137,7 +138,14 @@ function RRMenuItem.findFiles(selection)
             local name = LrPathUtils.removeExtension(fileName)
 
             local versions = {}
-            for file in LrFileUtils.files(dir) do
+            if dirCache[dir] == nil then
+                RRLogger.info("Listing contents of " .. dir)
+                dirCache[dir] = {}
+                for file in LrFileUtils.files(dir) do
+                    dirCache[dir][#dirCache[dir] + 1] = file
+                end
+            end
+            for _, file in pairs(dirCache[dir]) do
                 if LrPathUtils.removeExtension(LrPathUtils.leafName(file)) == name then
                     versions[#versions + 1] = file
                 end
